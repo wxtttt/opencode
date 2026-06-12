@@ -436,7 +436,7 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
       const name = filename ? `"${filename}"` : modality
       return {
         type: "text" as const,
-        text: `ERROR: Cannot read ${name} (this model does not support ${modality} input). Inform the user.`,
+        text: `[Attached ${name}] This model does not support ${modality} input. Use the "vision" subagent (task tool with subagent_type="vision") to analyze this content.`,
       }
     })
 
