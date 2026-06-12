@@ -159,3 +159,23 @@ const table = sqliteTable("session", {
 - Keep delivery vocabulary explicit. Prompts steer by default and promote at the next safe provider-turn boundary while the current drain requires continuation. An explicit `queue` input remains pending until the Session would otherwise become idle; promote one queued input at that boundary, then reevaluate continuation before promoting another. Promoting any new user input resets the selected agent's provider-turn allowance; a batch of steers resets it once.
 - Keep EventV2 replay owner claims separate from clustered Session execution ownership.
 - Keep the System Context algebra, registry, and built-ins in `src/system-context`; keep Context Source producers with their observed domains, and keep Session History selection plus Context Epoch persistence Session-owned.
+
+## Local Customization
+
+`xunfei_compatibility` 分支管理本地定制修改，基于最新 release tag，以 per-file 小 commit 组织。
+
+### Commit 规则
+- 只 `git push fork xunfei_compatibility`，不 push origin，不走 commit subagent 工作流（不 push + merge）
+- 新增修改直接在 `xunfei_compatibility` 分支上 commit
+
+### 升级方式
+- `git fetch origin --tags` → `git rebase --onto <new-tag> <old-tag> xunfei_compatibility`
+- rebase 后必须逐 commit 做三层审查（详见 `opencode-upgrade` skill）：
+  1. **冲突解决正确性**：确认冲突解决结果正确
+  2. **功能重复检查**：上游是否已实现类似功能，重复则 `git rebase -i` 删除对应 commit
+  3. **兼容性检查**：本地调用的上游 API 是否变化，需适配则修改代码
+
+### 冲突解决提醒
+- **error.ts**：必须选 `import { ProviderV2 }`，不能选 `import type { ProviderV2 }`
+- **retry.ts**：讯飞检查必须放在 `if (typeof msg === "string")` 块内
+- **custom-elements.d.ts**：symlink 替换为实际文件内容的 commit 直接生效
