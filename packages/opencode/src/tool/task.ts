@@ -198,7 +198,21 @@ export const TaskTool = Tool.define(
       if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
 
       const runTask = Effect.fn("TaskTool.runTask")(function* () {
-        const parts = yield* ops.resolvePromptParts(params.prompt)
+        const textParts = yield* ops.resolvePromptParts(params.prompt)
+        // 从父会话最近一条用户消息中提取图片附件，传递给 subagent
+        const sessionMessages = yield* sessions.messages({ sessionID: ctx.sessionID }).pipe(Effect.orDie)
+        const lastUserMessage = sessionMessages.findLast((m) => m.info.role === "user")
+        const imageParts = lastUserMessage
+          ? lastUserMessage.parts
+              .filter((p): p is typeof lastUserMessage.parts[number] & { type: "file"; mime: string } => p.type === "file" && typeof (p as any).mime === "string" && (p as any).mime.startsWith("image/"))
+              .map((p) => ({
+                type: "file" as const,
+                mime: p.mime,
+                url: p.url,
+                filename: p.filename,
+              }))
+          : []
+        const parts = [...imageParts, ...textParts]
         const result = yield* ops.prompt({
           messageID: MessageID.ascending(),
           sessionID: nextSession.id,
