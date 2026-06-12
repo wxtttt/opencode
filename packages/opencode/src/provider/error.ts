@@ -1,8 +1,20 @@
 import { APICallError } from "ai"
 import { STATUS_CODES } from "http"
 import { iife } from "@/util/iife"
-import type { ProviderV2 } from "@opencode-ai/core/provider"
+import { ProviderV2 } from "@opencode-ai/core/provider"
 import { isContextOverflow } from "@opencode-ai/llm"
+
+// 讯飞可重试错误模式
+const XUNFEI_RETRYABLE_PATTERNS = [
+  /EngineInternalError/i,
+  /system is busy/i,
+  /RecvFromEngineError/i,
+  /Engine Busy/i,
+]
+
+function isXunfeiRetryable(message: string): boolean {
+  return XUNFEI_RETRYABLE_PATTERNS.some((p) => p.test(message))
+}
 
 export class HeaderTimeoutError extends Error {
   public override readonly name = "ProviderHeaderTimeoutError"
@@ -100,7 +112,8 @@ export type ParsedStreamError =
     }
 
 export function parseStreamError(input: unknown): ParsedStreamError | undefined {
-  const raw = json(input)
+  // 支持 Error 实例和 string 输入
+  const raw = json(input instanceof Error ? input.message : typeof input === "string" ? input : input)
   const body = typeof raw?.message === "string" ? (json(raw.message) ?? raw) : raw
   if (!body) return
 
@@ -145,6 +158,17 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
       }
   }
 
+  // 讯飞流错误检测
+  const bodyMessage = typeof body?.error?.message === "string" ? body.error.message : typeof body?.message === "string" ? body.message : ""
+  if (bodyMessage && isXunfeiRetryable(bodyMessage)) {
+    return {
+      type: "api_error",
+      message: bodyMessage,
+      isRetryable: true,
+      responseBody,
+    }
+  }
+
   return {
     type: "api_error",
     message: typeof body?.error?.message === "string" ? body.error.message : "Server error.",
@@ -181,11 +205,17 @@ export function parseAPICallError(input: { providerID: ProviderV2.ID; error: API
   }
 
   const metadata = input.error.url ? { url: input.error.url } : undefined
+  // 讯飞 provider 的特定可重试错误
+  const isRetryable = input.providerID === ProviderV2.ID.make("xf")
+    ? input.error.isRetryable || isXunfeiRetryable(m)
+    : input.providerID.startsWith("openai")
+      ? isOpenAiErrorRetryable(input.error)
+      : input.error.isRetryable
   return {
     type: "api_error",
     message: m,
     statusCode: input.error.statusCode,
-    isRetryable: input.providerID.startsWith("openai") ? isOpenAiErrorRetryable(input.error) : input.error.isRetryable,
+    isRetryable,
     responseHeaders: input.error.responseHeaders,
     responseBody: input.error.responseBody,
     metadata,
