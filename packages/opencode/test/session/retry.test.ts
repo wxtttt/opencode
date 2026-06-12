@@ -428,6 +428,18 @@ describe("session.retry.retryable", () => {
 })
 
 describe("session.message-v2.fromError", () => {
+  test("classifies Xunfei busy errors from Error instances as retryable APIError", () => {
+    const error = new Error(
+      "Xunfei request failed with Sid: cht000bc8b6@dx19db81f0a86b992700 code: 10012, msg: EngineInternalError:The system is busy, please try again later., timeStamp:10:15:37.546",
+    )
+
+    const result = MessageV2.fromError(error, { providerID: ProviderV2.ID.make("xf") })
+
+    expect(SessionV1.APIError.isInstance(result)).toBe(true)
+    if (!SessionV1.APIError.isInstance(result)) throw new Error("expected APIError")
+    expect(result.data.isRetryable).toBe(true)
+  })
+
   test.concurrent(
     "converts ECONNRESET socket errors to retryable APIError",
     async () => {
