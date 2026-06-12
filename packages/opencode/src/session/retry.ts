@@ -147,6 +147,10 @@ export function retryable(error: Err, provider: string) {
 
   const message = isRecord(error.data) ? error.data.message : undefined
   if (typeof message !== "string") return undefined
+  // 讯飞可重试错误检查（上游模式未覆盖）
+  if (/EngineInternalError|system is busy|RecvFromEngineError|Engine Busy/i.test(message)) {
+    return { message }
+  }
   const lower = message.toLowerCase()
   if (lower.includes("too_many_requests")) return { message: "Too Many Requests" }
   if (lower.includes("exhausted") || lower.includes("unavailable")) return { message: "Provider is overloaded" }
