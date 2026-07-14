@@ -18,7 +18,9 @@ export function createMarkdownParser(highlight: (code: string, language: string)
 }
 
 const inlineMathRegex = /^\\\(((?:\\.|[^\\\n])*?)\\\)/
+const dollarInlineMathRegex = /^(?<!\$)\$(?!\$)((?:[^$\\]|\\.)+?)\$(?!\$)/
 const blockMathRegex = /^\$\$\n([\s\S]+?)\n\$\$(?:\n|$)/
+const inlineBlockMathRegex = /^\$\$((?:[^$\\]|\\.)+?)\$\$/
 
 const katexExtension: MarkedExtension = {
   extensions: [
@@ -38,6 +40,48 @@ const katexExtension: MarkedExtension = {
           raw: match[0],
           text: match[1].trim(),
           displayMode: false,
+        }
+      },
+      renderer: renderKatexToken,
+    },
+    {
+      name: "inlineDollarKatex",
+      level: "inline",
+      start(src) {
+        const index = src.indexOf("$")
+        if (index === -1) return
+        // 跳过 $$ 块级公式
+        if (src[index + 1] === "$") return
+        return index
+      },
+      tokenizer(src) {
+        const match = src.match(dollarInlineMathRegex)
+        if (!match) return
+        return {
+          type: "inlineDollarKatex",
+          raw: match[0],
+          text: match[1].trim(),
+          displayMode: false,
+        }
+      },
+      renderer: renderKatexToken,
+    },
+    {
+      name: "inlineBlockKatex",
+      level: "inline",
+      start(src) {
+        const index = src.indexOf("$$")
+        if (index === -1) return
+        return index
+      },
+      tokenizer(src) {
+        const match = src.match(inlineBlockMathRegex)
+        if (!match) return
+        return {
+          type: "inlineBlockKatex",
+          raw: match[0],
+          text: match[1].trim(),
+          displayMode: true,
         }
       },
       renderer: renderKatexToken,
