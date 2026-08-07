@@ -14,6 +14,16 @@ test("renders inline and block math", async () => {
   expect(await parser.parse("$$\nx^2\n$$\n")).toContain('<span class="katex-display">')
 })
 
+test("renders dollar inline math", async () => {
+  expect(await parser.parse("$x^2$")).toContain('<span class="katex">')
+  // 避免 $HOME 这类普通美元符号被误渲染
+  expect(await parser.parse("$HOME is a variable")).not.toContain('class="katex"')
+})
+
+test("renders single-line block math", async () => {
+  expect(await parser.parse("$$x^2$$")).toContain('<span class="katex-display">')
+})
+
 test("uses the configured code highlighter", async () => {
   expect(await parser.parse("```ts\nconst value = 1\n```\n")).toBe('<pre data-language="ts">const value = 1</pre>\n')
 })
