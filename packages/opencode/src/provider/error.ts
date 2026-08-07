@@ -12,7 +12,7 @@ const XUNFEI_RETRYABLE_PATTERNS = [
   /Engine Busy/i,
 ]
 
-function isXunfeiRetryable(message: string): boolean {
+export function isXunfeiRetryable(message: string): boolean {
   return XUNFEI_RETRYABLE_PATTERNS.some((p) => p.test(message))
 }
 

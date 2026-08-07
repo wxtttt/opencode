@@ -759,6 +759,16 @@ export function fromError(
           ).toObject()
         }
       }
+      // 纯文本讯飞可重试错误（如 EngineInternalError）
+      if (ProviderError.isXunfeiRetryable(errorMessage(e))) {
+        return new APIError(
+          {
+            message: errorMessage(e),
+            isRetryable: true,
+          },
+          { cause: e },
+        ).toObject()
+      }
       return new NamedError.Unknown({ message: errorMessage(e) }, { cause: e }).toObject()
     default:
       try {
