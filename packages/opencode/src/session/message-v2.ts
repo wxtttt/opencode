@@ -238,7 +238,40 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           })
         }
       }
-      if (userMessage.parts.length > 0) result.push(userMessage)
+      if (userMessage.parts.length > 0) {
+        // 按 model.options.max_images 拆分图片到多个 user message，避免 API 单轮图片数量限制
+        const maxImages = typeof model.options?.max_images === "number" ? model.options.max_images : Infinity
+        const imageParts = userMessage.parts.filter((p) => p.type === "file" && isMedia(p.mediaType ?? ""))
+        const nonImageParts = userMessage.parts.filter((p) => !(p.type === "file" && isMedia(p.mediaType ?? "")))
+
+        if (imageParts.length <= maxImages) {
+          result.push(userMessage)
+        } else {
+          const total = imageParts.length
+          for (let i = 0; i < total; i += maxImages) {
+            const batch = imageParts.slice(i, i + maxImages)
+            const end = Math.min(i + maxImages, total)
+            const isLast = end >= total
+            const batchLabel = `Images ${i + 1}-${end} of ${total}.`
+            result.push({
+              id: `${userMessage.id}-batch-${Math.floor(i / maxImages) + 1}`,
+              role: "user",
+              parts: [
+                ...batch,
+                { type: "text" as const, text: isLast ? `${batchLabel} These are the last batch.` : batchLabel },
+                ...(isLast ? nonImageParts : []),
+              ],
+            })
+            if (!isLast) {
+              result.push({
+                id: MessageID.ascending(),
+                role: "assistant",
+                parts: [{ type: "text" as const, text: `Understood, I have seen images ${i + 1}-${end}.` }],
+              })
+            }
+          }
+        }
+      }
     }
 
     if (msg.info.role === "assistant") {
