@@ -1,5 +1,5 @@
 import { $ } from "bun"
-import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises"
+import { chmod, copyFile, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -74,9 +74,21 @@ export async function downloadCliToResources() {
   const directory = await mkdtemp(join(tmpdir(), "opencode-cli-"))
   const dest = windowsify("resources/opencode-cli")
   try {
-    await $`bun install --no-save --cwd ${directory} ${`${cli.package}@${CLI_VERSION}`} ${`--os=${cli.os}`} ${`--cpu=${cli.cpu}`}`
+    // 直接下载 tgz 并解压，绕开 bun install --no-save 在 Windows 上不提取文件的问题
+    const registry = Bun.env.BUN_CONFIG_REGISTRY ?? "https://registry.npmjs.org"
+    const metadata = await fetch(`${registry}/${cli.package}/${CLI_VERSION}`).then((r) => {
+      if (!r.ok) throw new Error(`Failed to fetch ${cli.package}@${CLI_VERSION}: ${r.status} ${r.statusText}`)
+      return r.json()
+    })
+    const tarball = metadata.dist.tarball
+    const tgz = join(directory, "cli.tgz")
+    await fetch(tarball).then(async (r) => {
+      if (!r.ok) throw new Error(`Failed to download ${tarball}: ${r.status} ${r.statusText}`)
+      await writeFile(tgz, new Uint8Array(await r.arrayBuffer()))
+    })
+    await $`tar -xzf ${tgz} -C ${directory}`
     await copyFile(
-      join(directory, "node_modules", cli.package, "bin", cli.os === "win32" ? "opencode2.exe" : "opencode2"),
+      join(directory, "package", "bin", cli.os === "win32" ? "opencode2.exe" : "opencode2"),
       dest,
     )
   } finally {
