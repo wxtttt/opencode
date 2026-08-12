@@ -162,6 +162,27 @@ function matchesRetryableMessage(value: unknown) {
   return typeof value === "string" && RETRYABLE_MESSAGE_PATTERNS.some((pattern) => pattern.test(value))
 }
 
+// 引擎超限类错误：上下文超出模型窗口或模型拥塞时网关返回的错误，
+// 重试无法解决，应触发压缩兜底（见 processor.ts halt）
+const ENGINE_BUSY_PATTERNS = [
+  /engine is overloaded|engine is busy|engine busy|10110|EngineInternalError|system is busy|RecvFromEngineError/i,
+]
+
+export function isEngineBusyError(error: Err): boolean {
+  if (SessionV1.APIError.isInstance(error)) {
+    const fields = [
+      String(error.data.message ?? ""),
+      String(error.data.responseBody ?? ""),
+      String(error.data.statusCode ?? ""),
+    ]
+    return fields.some((value) => ENGINE_BUSY_PATTERNS.some((pattern) => pattern.test(value)))
+  }
+  const message = isRecord(error.data) ? error.data.message : undefined
+  return (
+    typeof message === "string" && ENGINE_BUSY_PATTERNS.some((pattern) => pattern.test(message))
+  )
+}
+
 function str(value: unknown) {
   if (value === undefined || value === null) return ""
   return String(value)

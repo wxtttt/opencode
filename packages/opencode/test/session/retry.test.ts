@@ -531,3 +531,43 @@ describe("session.message-v2.fromError", () => {
     })
   })
 })
+
+describe("session.retry.isEngineBusyError", () => {
+  test("讯飞 10110 引擎过载", () => {
+    const error = new SessionV1.APIError({
+      message: "the engine is overloaded,please slow down or try again later",
+      statusCode: 503,
+      isRetryable: false,
+    })
+    expect(SessionRetry.isEngineBusyError(error)).toBe(true)
+  })
+
+  test("讯飞 10110 错误码在 responseBody", () => {
+    const error = new SessionV1.APIError({
+      message: "an error occurred while processing the request",
+      statusCode: 503,
+      isRetryable: false,
+      responseBody: JSON.stringify({ error: { code: 10110, message: "the engine is overloaded" } }),
+    })
+    expect(SessionRetry.isEngineBusyError(error)).toBe(true)
+  })
+
+  test("普通 503 服务不可用不算引擎超限", () => {
+    const error = new SessionV1.APIError({
+      message: "Service Unavailable",
+      statusCode: 503,
+      isRetryable: true,
+    })
+    expect(SessionRetry.isEngineBusyError(error)).toBe(false)
+  })
+
+  test("非 APIError 的错误对象（引擎内部错误文案）", () => {
+    const error = wrap("EngineInternalError: system is busy")
+    expect(SessionRetry.isEngineBusyError(error)).toBe(true)
+  })
+
+  test("非 APIError 的普通错误", () => {
+    const error = wrap("some random failure")
+    expect(SessionRetry.isEngineBusyError(error)).toBe(false)
+  })
+})

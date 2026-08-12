@@ -1083,6 +1083,8 @@ const layer = Layer.effect(
         const ctx = yield* InstanceState.context
         let structured: unknown
         let step = 0
+        // 本轮是否已因引擎超限触发过压缩（防压缩死循环）
+        let busyCompaction = false
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
         while (true) {
@@ -1318,6 +1320,9 @@ const layer = Layer.effect(
 
             if (result === "stop") return "break" as const
             if (result === "compact") {
+              // 引擎超限压缩兜底：压缩后仍超限说明服务端拥塞，停止避免压缩死循环
+              if (handle.busyCompaction && busyCompaction) return "break" as const
+              busyCompaction ||= handle.busyCompaction
               yield* compaction.create({
                 sessionID,
                 agent: lastUser.agent,

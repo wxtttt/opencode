@@ -31,6 +31,8 @@ export type Result = "compact" | "stop" | "continue"
 
 export interface Handle {
   readonly message: SessionV1.Assistant
+  // 本轮是否因引擎超限类错误触发压缩（上层用于防压缩死循环）
+  readonly busyCompaction: boolean
   readonly updateToolCall: (
     toolCallID: string,
     update: (part: SessionV1.ToolPart) => SessionV1.ToolPart,
@@ -70,6 +72,8 @@ interface ProcessorContext extends Input {
   snapshot: string | undefined
   blocked: boolean
   needsCompaction: boolean
+  // 本轮是否因引擎超限类错误触发压缩（用于上层防压缩死循环）
+  busyCompaction: boolean
   currentText: SessionV1.TextPart | undefined
   reasoningMap: Record<string, SessionV1.ReasoningPart>
 }
@@ -109,6 +113,7 @@ const layer = Layer.effect(
         snapshot: initialSnapshot,
         blocked: false,
         needsCompaction: false,
+        busyCompaction: false,
         currentText: undefined,
         reasoningMap: {},
       }
@@ -618,7 +623,8 @@ const layer = Layer.effect(
           stack: e instanceof Error ? e.stack : undefined,
         })
         const error = parse(e)
-        if (SessionV1.ContextOverflowError.isInstance(error)) {
+        // 引擎超限类错误与上下文溢出同路径：重试无法解占用问题，触发压缩兜底
+        if (SessionV1.ContextOverflowError.isInstance(error) || SessionRetry.isEngineBusyError(error)) {
           if ((yield* config.get()).compaction?.auto === false && !ctx.assistantMessage.summary) {
             ctx.assistantMessage.error = error
             ctx.assistantMessage.finish = "error"
@@ -626,6 +632,7 @@ const layer = Layer.effect(
             yield* status.set(ctx.sessionID, { type: "idle" })
             return
           }
+          ctx.busyCompaction ||= SessionRetry.isEngineBusyError(error)
           ctx.needsCompaction = true
           yield* events.publish(Session.Event.Error, { sessionID: ctx.sessionID, error })
           return
@@ -699,6 +706,9 @@ const layer = Layer.effect(
       return {
         get message() {
           return ctx.assistantMessage
+        },
+        get busyCompaction() {
+          return ctx.busyCompaction
         },
         updateToolCall,
         completeToolCall,
