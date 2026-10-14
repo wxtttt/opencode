@@ -375,6 +375,21 @@ describe("provider error classification", () => {
     ).toEqual(Array(cases.length).fill("QuotaExceeded"))
   })
 
+  test("classifies OpenCode Zen per-minute throttle as a rate limit rather than an account cap", () => {
+    const cases = [
+      // 网关的实际报错：每分钟请求数用尽，窗口会自动恢复
+      { error: { message: "rpm exhausted", type: "quota_exceeded_error", code: "8" } },
+      { error: { message: "Requests per minute exhausted", type: "quota_exceeded_error" } },
+      { error: { message: "rpm exhausted", type: "quota_exceeded_error", code: "8" } },
+    ]
+    expect(
+      cases.map(
+        (body) =>
+          classifyProviderFailure({ message: body.error.message, status: 429, rawBody: JSON.stringify(body) })._tag,
+      ),
+    ).toEqual(Array(cases.length).fill("RateLimit"))
+  })
+
   test("classifies Z.ai prompt length rejections as context overflow", () => {
     const cases = [
       { error: { code: "1261", message: "Prompt 超长" } },

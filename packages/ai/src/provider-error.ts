@@ -174,6 +174,8 @@ const GATEWAY_CODE_LABEL = /^[^:\n]+: \[([A-Za-z0-9_.-]+)\]/
 // xAI reports an invalid API key as HTTP 400 with the generic `invalid-argument` code.
 const AUTH_TEXT = /incorrect api key provided/i
 const RATE_LIMIT_TEXT = /rate increased too quickly|rate[-_\s]?limit|too[_\s]?many[_\s]?requests/i
+// OpenCode Zen reports per-minute request throttles as a typed quota error, but the window resets: it is a rate limit.
+const TRANSIENT_WINDOW_TEXT = /\brpm\b|requests?[-_\s]?per[-_\s]?(?:minute|second|hour)/i
 // Only consulted on 429, where throttles and account caps share a status.
 // Z.ai reports balance, plan expiry, plan limits, and plan model access on 429.
 // Cerebras reports its per-minute token throttle as `token_quota_exceeded`; that is a rate limit.
@@ -272,6 +274,13 @@ export function classifyProviderFailure(input: ProviderFailure): AIError["reason
     return new InvalidRequestError({ ...details, classification: "payload-too-large" })
   if (codes.some((code) => CONTENT_POLICY_CODES.has(code)) || (clientScoped && CONTENT_POLICY_TEXT.test(input.message)))
     return new ContentPolicyError(details)
+  // A resetting window quota (rpm) is a rate limit: retry, do not surface as an account cap.
+  if (input.status === 429 && TRANSIENT_WINDOW_TEXT.test(text))
+    return new RateLimitError({
+      ...details,
+      retryAfterMs: input.retryAfterMs,
+      rateLimit: input.rateLimit,
+    })
   if (
     input.status === 402 ||
     codes.some((code) => QUOTA_CODES.has(code)) ||
