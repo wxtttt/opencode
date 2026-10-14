@@ -10,6 +10,7 @@ import { Job } from "../../job.js"
 import { Model } from "../../model.js"
 import { Permission } from "../../permission.js"
 import { Session } from "../../session.js"
+import { SessionMessage } from "../../session/message.js"
 import { SessionSchema } from "../../session/schema.js"
 import { SubagentJob } from "../../session/subagent-job.js"
 
@@ -198,6 +199,40 @@ export const Plugin = {
                 ((yield* sessions.active).has(existing.id) || (yield* jobs.get(existing.id))?.status === "running")
               yield* context.progress({ sessionID: child.id, status: "running" })
 
+              // 父会话最近一条用户消息的图片附件一并带给 subagent，避免图片上下文丢失
+              // 已物化附件转回引用形式：uri 来源直接复用，inline 数据拼成 data URL 重新物化
+              const inheritedFiles =
+                (
+                  yield* sessions
+                    .messages({ sessionID: context.sessionID, order: "desc", limit: 20 })
+                    .pipe(
+                      Effect.mapError(
+                        (error) =>
+                          new ToolFailure({ message: `Failed to read parent messages: ${context.sessionID}`, error }),
+                      ),
+                    )
+                )
+                  .find(
+                    (message): message is SessionMessage.User =>
+                      message.type === "user" && (message.files?.length ?? 0) > 0,
+                  )
+                  ?.files?.flatMap((file) => {
+                    if (!file.mime.startsWith("image/")) return []
+                    const reference =
+                      file.source.type === "uri"
+                        ? { uri: file.source.uri }
+                        : file.data.length === 0
+                          ? undefined
+                          : { uri: `data:${file.mime};base64,${file.data}` }
+                    if (reference === undefined) return []
+                    return [
+                      {
+                        ...reference,
+                        ...(file.name === undefined ? {} : { name: file.name }),
+                        ...(file.description === undefined ? {} : { description: file.description }),
+                      },
+                    ]
+                  }) ?? []
               yield* sessions
                 .prompt({
                   sessionID: child.id,
@@ -205,6 +240,7 @@ export const Plugin = {
                     existing === undefined
                       ? ["You are a subagent spawned by another session.", input.prompt].join("\n")
                       : input.prompt,
+                  ...(inheritedFiles.length > 0 ? { files: inheritedFiles } : {}),
                   ...(running ? {} : { resume: false }),
                 })
                 .pipe(
